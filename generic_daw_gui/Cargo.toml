@@ -10,6 +10,7 @@ workspace = true
 [dependencies]
 generic_daw_core.workspace = true
 generic_daw_project.workspace = true
+generic_daw_script.workspace = true
 generic_daw_widget.workspace = true
 utils.workspace = true
 

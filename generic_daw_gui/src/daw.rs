@@ -1,6 +1,7 @@
 use crate::{
 	arrangement_view::{self, Arrangement, ArrangementView, Feedback},
 	clap_host::{self, ClapHost, PluginId},
+	commands::{self, KeyEvent},
 	components::{menu_entry, number_input},
 	config::Config,
 	config_view::{self, ConfigView},
@@ -9,6 +10,7 @@ use crate::{
 		arrow_big_right, chart_no_axes_gantt, cpu, gavel, keyboard_music, magnet, menu, metronome,
 		panel_bottom_dashed, pause, play, plus, sliders_vertical, square,
 	},
+	palette::{self, Palette},
 	plugin_picker::{self, PluginPicker},
 	state::{DEFAULT_SPLIT_HEIGHT, DEFAULT_SPLIT_WIDTH, MIN_SPLIT_HEIGHT, MIN_SPLIT_WIDTH, State},
 	stylefns::{
@@ -25,6 +27,7 @@ use generic_daw_core::{
 	},
 };
 use generic_daw_project::proto;
+use generic_daw_script::{Handler, Keymap, Registry};
 use generic_daw_widget::{context_menu::ContextMenu, menu::Menu, select_area::SelectArea};
 use iced::{
 	Center, Color, Element, Fill, Font, Shrink, Subscription, Task, Theme, border,
@@ -35,7 +38,7 @@ use iced::{
 	time::every,
 	widget::{
 		bottom_center, button, center, checkbox, column, container, mouse_area, opaque,
-		progress_bar, right, row, rule, scrollable, slider, space, stack, text,
+		progress_bar, right, row, rule, scrollable, slider, space, stack, text, text_input,
 	},
 	window,
 };
@@ -133,6 +136,12 @@ pub enum Message {
 	FileTree(file_tree::Message),
 	PluginPicker(plugin_picker::Message),
 	ConfigView(config_view::Message),
+
+	Palette(palette::Message),
+	TogglePalette,
+	RunCommand(Arc<str>),
+	RunFromPalette(Arc<str>),
+	Key(Box<KeyEvent>),
 
 	CloseRequested(window::Id),
 	ProjectLoaded(
@@ -304,6 +313,10 @@ pub struct Daw {
 	config_view: Option<ConfigView>,
 	recovering: bool,
 
+	commands: Registry<Message>,
+	keymap: Keymap,
+	palette: Option<Palette>,
+
 	plugins: plugin_picker::State,
 	bpm_tapper: BpmTapper,
 
@@ -374,6 +387,10 @@ impl Daw {
 			config_view: None,
 			plugin_picker: None,
 			recovering: true,
+
+			commands: commands::builtin(),
+			keymap: commands::default_keymap(),
+			palette: None,
 
 			plugins: plugin_picker::State::default(),
 			bpm_tapper: BpmTapper::default(),
@@ -461,6 +478,27 @@ impl Daw {
 						});
 				}
 			}
+			Message::Palette(message) => {
+				if let Some(palette) = &mut self.palette {
+					return palette
+						.update(message, &self.commands)
+						.handle(Message::Palette, |instruction| {
+							self.handle_instruction(instruction)
+						});
+				}
+			}
+			Message::TogglePalette => {
+				if self.palette.take().is_none() && !self.recovering && self.progress.is_none() {
+					self.palette = Some(Palette::new(&self.commands));
+					return text_input::focus(palette::INPUT_ID.clone());
+				}
+			}
+			Message::RunCommand(name) => return self.run_command(&name),
+			Message::RunFromPalette(name) => {
+				self.palette = None;
+				return self.run_command(&name);
+			}
+			Message::Key(event) => return self.on_key(&event),
 			Message::CloseRequested(window) => {
 				if window == self.main_window_id {
 					if !self.recovering {
@@ -1214,6 +1252,94 @@ impl Daw {
 		Task::none()
 	}
 
+	fn run_command(&mut self, name: &str) -> Task<Message> {
+		match self.commands.get(name).map(|command| command.handler.clone()) {
+			Some(Handler::Native(message)) => self.update(message),
+			None => {
+				warn!("unknown command `{name}`");
+				Task::none()
+			}
+		}
+	}
+
+	fn current_tab(&self) -> Tab {
+		self.bottom_pane
+			.filter(|_| self.bottom_selected)
+			.unwrap_or(self.top_pane)
+	}
+
+	fn key_contexts(&self) -> Vec<&'static str> {
+		if self.palette.is_some() {
+			vec!["palette"]
+		} else if self.config_view.is_some() {
+			vec!["config"]
+		} else if self.plugin_picker.is_some() {
+			vec!["picker"]
+		} else {
+			vec![
+				match self.current_tab() {
+					Tab::Playlist => "playlist",
+					Tab::Mixer => "mixer",
+					Tab::PianoRoll => "piano-roll",
+				},
+				"arrangement",
+			]
+		}
+	}
+
+	fn on_key(&mut self, event: &KeyEvent) -> Task<Message> {
+		if self.progress.is_some() {
+			return Task::none();
+		}
+
+		// 1. user-configurable keymap (never while the recovery dialog is up)
+		if !self.recovering
+			&& !event.repeat
+			&& let Some(chord) =
+				commands::chord_from_event(&event.key, event.physical_key, event.modifiers)
+			&& let Some(name) = self
+				.keymap
+				.resolve(&self.key_contexts(), &chord)
+				.cloned()
+		{
+			return self.run_command(&name);
+		}
+
+		// 2. the existing hardcoded keybinds, unchanged, as a fallback
+		self.legacy_keybinds(event)
+			.map_or_else(Task::none, |message| self.update(message))
+	}
+
+	/// Exactly the chain that used to live in the subscription closure.
+	fn legacy_keybinds(&self, event: &KeyEvent) -> Option<Message> {
+		let KeyEvent {
+			key,
+			physical_key,
+			modifiers,
+			repeat,
+		} = event;
+
+		if self.recovering {
+			return Self::recovering_keybinds(key, *modifiers, *repeat);
+		}
+		if self.palette.is_some() {
+			// modal: no global shortcuts (Space etc.) while typing in the palette
+			return Palette::keybinds(key, *modifiers, *repeat);
+		}
+
+		let tab = self.current_tab();
+		let local = if self.config_view.is_some() {
+			ConfigView::keybinds(key, *modifiers, *repeat)
+		} else if self.plugin_picker.is_some() {
+			PluginPicker::keybinds(key, *modifiers, *repeat)
+		} else {
+			ArrangementView::keybinds(key, *physical_key, *modifiers, *repeat)
+				.map(|message| Message::Arrangement(self.project, message(tab)))
+		};
+
+		local.or_else(|| Self::keybinds(key, *physical_key, *modifiers, *repeat))
+	}
+
 	pub fn view(&self, window: window::Id) -> Element<'_, Message> {
 		if let Some(gui) = self.clap_host.view(window) {
 			return gui.map(Message::ClapHost);
@@ -1514,6 +1640,17 @@ impl Daw {
 				)
 				.on_press(Message::ToggleConfigView),
 			)),
+			self.palette.as_ref().map(|palette| opaque(
+				mouse_area(
+					center(opaque(
+						palette
+							.view(&self.commands, &self.keymap)
+							.map(Message::Palette)
+					))
+					.style(|_| container::background(Color::BLACK.scale_alpha(ALPHA_2_3))),
+				)
+				.on_press(Message::TogglePalette),
+			)),
 			self.progress.map(|progress| mouse_area(
 				container(
 					column![
@@ -1769,55 +1906,21 @@ impl Daw {
 				Subscription::none()
 			},
 			if self.progress.is_none() {
-				keyboard::listen()
-					.with((
-						self.recovering,
-						self.config_view.is_some(),
-						self.plugin_picker.is_some(),
-						self.project,
-						self.bottom_pane
-							.filter(|_| self.bottom_selected)
-							.unwrap_or(self.top_pane),
-					))
-					.filter_map(
-						|((recovering, config_view, plugin_picker, project, tab), event)| {
-							match event {
-								keyboard::Event::KeyPressed {
-									key,
-									physical_key,
-									modifiers,
-									repeat,
-									..
-								} => {
-									if recovering {
-										Self::recovering_keybinds(&key, modifiers, repeat)
-									} else {
-										if config_view {
-											ConfigView::keybinds(&key, modifiers, repeat)
-										} else if plugin_picker {
-											PluginPicker::keybinds(&key, modifiers, repeat)
-										} else {
-											ArrangementView::keybinds(
-												&key,
-												physical_key,
-												modifiers,
-												repeat,
-											)
-											.map(
-												|message| {
-													Message::Arrangement(project, message(tab))
-												},
-											)
-										}
-										.or_else(|| {
-											Self::keybinds(&key, physical_key, modifiers, repeat)
-										})
-									}
-								}
-								_ => None,
-							}
-						},
-					)
+				keyboard::listen().filter_map(|event| match event {
+					keyboard::Event::KeyPressed {
+						key,
+						physical_key,
+						modifiers,
+						repeat,
+						..
+					} => Some(Message::Key(Box::new(KeyEvent {
+						key,
+						physical_key,
+						modifiers,
+						repeat,
+					}))),
+					_ => None,
+				})
 			} else {
 				Subscription::none()
 			},

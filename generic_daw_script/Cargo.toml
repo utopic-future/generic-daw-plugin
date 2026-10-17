@@ -1,0 +1,12 @@
+[package]
+name = "generic_daw_script"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Intentionally empty for now: this crate is pure std.
+# The Lua host (mlua) arrives in the next patch behind a `lua` feature.
