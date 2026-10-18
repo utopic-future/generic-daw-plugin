@@ -1225,6 +1225,7 @@ dependencies = [
  "fragile",
  "generic_daw_core",
  "generic_daw_project",
+ "generic_daw_script",
  "generic_daw_widget",
  "hound",
  "iced",
@@ -1269,6 +1270,10 @@ dependencies = [
  "prost",
  "yazi",
 ]
+
+[[package]]
+name = "generic_daw_script"
+version = "0.0.0"
 
 [[package]]
 name = "generic_daw_widget"

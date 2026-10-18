@@ -6,6 +6,7 @@ members = [
 	"generic_daw_gui",
 	"generic_daw_project",
 	"generic_daw_widget",
+	"generic_daw_script",
 	"thread_pool",
 	"utils",
 ]
@@ -20,6 +21,7 @@ generic_daw_project.path = "generic_daw_project"
 generic_daw_widget.path = "generic_daw_widget"
 thread_pool.path = "thread_pool"
 utils.path = "utils"
+generic_daw_script = { path = "generic_daw_script" }
 
 [workspace.package]
 version = "0.0.0"
