@@ -104,36 +104,28 @@ impl Palette {
 			.on_submit(Message::Submit)
 			.padding(8);
 
-		let rows = column(
-			self.results
-				.iter()
-				.enumerate()
-				.filter_map(|(i, name)| {
-					let command = registry.get(name)?;
-					let hint = keymap
-						.chord_for(name)
-						.map(ToString::to_string)
-						.unwrap_or_default();
+		let rows = column(self.results.iter().enumerate().filter_map(|(i, name)| {
+			let command = registry.get(name)?;
+			let hint = keymap
+				.chord_for(name)
+				.map(ToString::to_string)
+				.unwrap_or_default();
 
-					Some(
-						button(
-							row![text(&*command.title).width(Fill), text(hint).size(13)]
-								.spacing(10),
-						)
-						.width(Fill)
-						.style(button_with_radius(
-							if i == self.selected {
-								button::primary
-							} else {
-								button::subtle
-							},
-							5,
-						))
-						.on_press(Message::Pick(i))
-						.into(),
-					)
-				}),
-		)
+			Some(
+				button(row![text(&*command.title).width(Fill), text(hint).size(13)].spacing(10))
+					.width(Fill)
+					.style(button_with_radius(
+						if i == self.selected {
+							button::primary
+						} else {
+							button::subtle
+						},
+						5,
+					))
+					.on_press(Message::Pick(i))
+					.into(),
+			)
+		}))
 		.spacing(2);
 
 		container(

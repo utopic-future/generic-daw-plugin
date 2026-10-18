@@ -270,15 +270,13 @@ impl Tab {
 				},
 			))
 			.padding(padding::horizontal(7).vertical(5))
-			.on_press_maybe(
-				(top_pane != self && bottom_pane != Some(self)).then_some(
-					if bottom_pane.is_some() && bottom_selected {
-						Message::BottomPane(self)
-					} else {
-						Message::TopPane(self)
-					},
-				),
-			),
+			.on_press_maybe((top_pane != self && bottom_pane != Some(self)).then_some(
+				if bottom_pane.is_some() && bottom_selected {
+					Message::BottomPane(self)
+				} else {
+					Message::TopPane(self)
+				},
+			)),
 			move || {
 				container(
 					menu_entry(panel_bottom_dashed(), "Detach", "")
@@ -1253,7 +1251,11 @@ impl Daw {
 	}
 
 	fn run_command(&mut self, name: &str) -> Task<Message> {
-		match self.commands.get(name).map(|command| command.handler.clone()) {
+		match self
+			.commands
+			.get(name)
+			.map(|command| command.handler.clone())
+		{
 			Some(Handler::Native(message)) => self.update(message),
 			None => {
 				warn!("unknown command `{name}`");
@@ -1297,10 +1299,7 @@ impl Daw {
 			&& !event.repeat
 			&& let Some(chord) =
 				commands::chord_from_event(&event.key, event.physical_key, event.modifiers)
-			&& let Some(name) = self
-				.keymap
-				.resolve(&self.key_contexts(), &chord)
-				.cloned()
+			&& let Some(name) = self.keymap.resolve(&self.key_contexts(), &chord).cloned()
 		{
 			return self.run_command(&name);
 		}
@@ -1554,15 +1553,13 @@ impl Daw {
 										),
 									)
 									.padding(self.bottom_pane.map_or_default(|_| 5))
-									.style(
-										container_with_radius(
-											selectable_box(
-												container::transparent,
-												self.bottom_pane.is_some() && !self.bottom_selected,
-											),
-											self.top_pane.radius(),
-										)
-									),
+									.style(container_with_radius(
+										selectable_box(
+											container::transparent,
+											self.bottom_pane.is_some() && !self.bottom_selected,
+										),
+										self.top_pane.radius(),
+									)),
 								)
 								.on_select_maybe(
 									(self.bottom_pane.is_some() && self.bottom_selected)
@@ -1581,15 +1578,13 @@ impl Daw {
 											)),
 									)
 									.padding(5)
-									.style(
-										container_with_radius(
-											selectable_box(
-												container::transparent,
-												self.bottom_selected,
-											),
-											self.bottom_pane.unwrap().radius(),
-										)
-									),
+									.style(container_with_radius(
+										selectable_box(
+											container::transparent,
+											self.bottom_selected,
+										),
+										self.bottom_pane.unwrap().radius(),
+									)),
 								)
 								.on_select_maybe(
 									(!self.bottom_selected)
@@ -1745,10 +1740,12 @@ impl Daw {
 														.padding(
 															padding::horizontal(10).vertical(5)
 														)
-														.style(container_with_radius(
-															weakest_bordered_box,
-															5
-														)),
+														.style(
+															container_with_radius(
+																weakest_bordered_box,
+																5
+															)
+														),
 														row![
 															button("Pick")
 																.on_press(
@@ -1792,9 +1789,9 @@ impl Daw {
 								.align_x(Center)
 								.spacing(10)
 							)
-							.direction(
-								scrollable::Direction::Vertical(scrollable::Scrollbar::hidden(),)
-							)
+							.direction(scrollable::Direction::Vertical(
+								scrollable::Scrollbar::hidden(),
+							))
 						]
 						.align_x(Center)
 						.spacing(20),

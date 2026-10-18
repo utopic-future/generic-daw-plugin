@@ -115,12 +115,7 @@ pub struct Keymap {
 }
 
 impl Keymap {
-	pub fn bind(
-		&mut self,
-		context: Option<&str>,
-		chord: Chord,
-		command: impl Into<Arc<str>>,
-	) {
+	pub fn bind(&mut self, context: Option<&str>, chord: Chord, command: impl Into<Arc<str>>) {
 		self.bindings.push(Binding {
 			context: context.map(Arc::from),
 			chord,
